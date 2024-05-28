@@ -2,9 +2,11 @@ name: code-coverage
 
 on:
   push:
-    branches: [ "main"]
+    branches: 
+      - main
   pull_request:
-    branches: [ "main" ]
+    branches: 
+      - main
 
 env:
   CARGO_TERM_COLOR: always
@@ -15,43 +17,27 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Free Disk Space (Ubuntu)
-      uses: jlumbroso/free-disk-space@main
-      with:
-        # this might remove tools that are actually needed,
-        # if set to "true" but frees about 6 GB
-        tool-cache: false
-        android: true
-        dotnet: true
-        haskell: true
-        large-packages: false
-        docker-images: true
-        swap-storage: true
+      - name: Checkout sources
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
 
-    - name: Checkout sources
-      uses: actions/checkout@v3
-      with:
-        submodules: recursive
+      - name: Setup Rust (cache & toolchain)
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
 
-    - name: Setup Rust (cache & toolchain)
-      uses: ./.github/actions/setup-rust
+      - name: Run unittest with coverage
+        run: |
+          cargo install grcov
+          cargo clean
+          RUSTFLAGS="-Zprofile -Ccodegen-units=1 -Copt-level=0 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Zpanic_abort_tests" cargo +stable test --no-fail-fast
+          grcov . --binary-path ./target/debug/ -s . -t lcov --branch --ignore-not-existing -o ./lcov.info
+        env:
+          RUSTUP_TOOLCHAIN: stable
 
-    - name: Run unittest
-      run: cargo test --no-fail-fast
-      env:
-        CARGO_INCREMENTAL: '0'
-        RUSTC_BOOTSTRAP: '1'
-        RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Copt-level=0 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Zpanic_abort_tests'
-        RUSTDOCFLAGS: '-Zprofile -Ccodegen-units=1 -Copt-level=0 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Zpanic_abort_tests'
-
-    - id: coverage
-      uses: actions-rs/grcov@v0.1
-
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v3
-      with:
-        file: ${{ steps.coverage.outputs.report }}
-        # Disable to avoid CI failure as following:
-        # ['error'] There was an error running the uploader: Error uploading to https://codecov.io: Error: There was an error fetching the storage 
-        # URL during POST: 404 - {'detail': ErrorDetail(string='Could not find a repository, try using repo upload token', code='not_found')}
-        # fail_ci_if_error: true
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./lcov.info
